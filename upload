@@ -1,0 +1,62 @@
+#!/bin/bash
+# Shell uploading script
+# Author: Damian "Rush" Kaczmarek
+# License: WTFPL
+#
+# How to use:
+# * Move script to $HOME/bin and have this directory in your PATH
+# * upload some_file.jpg - to upload file, URL will be in your clipboard
+# * upload rm some_file.jpg - to remove file, works only if remote file is the same as local
+
+server="dragon.rushbase.net"
+server_dir="public_html"
+public_url="http://dragon.rushbase.net/~rush"
+
+function ensure_file()
+{
+if ! [ -e "$1" ];then
+    echo "Cannot $2, file \"$1\" does not exist"
+    exit 1
+fi
+if [ -d "$1" ];then 
+		echo "File \"$1\" is a directory, upload not yet supported."
+		exit 1
+fi
+}
+
+
+
+
+function upload_rm()
+{
+		ensure_file "$1" "delete"
+    base=`basename "$1"`
+    sha1=`sha1sum "$1"|cut -f1 -d ' '`
+    ssh $server 'rm -f '"$server_dir/$sha1/$base"' && rmdir '"$server_dir/$sha1"' 2> /dev/null'
+		return $?
+}
+
+if [ "$1" == "rm" ];then
+	shift
+	upload_rm $*
+	exit $?
+fi
+
+ensure_file "$1" "upload"
+
+name=$(basename "$1")
+sha1=`sha1sum "$1"|cut -f1 -d ' '`
+
+# --append-verify    continue transfer
+# -h                 human readable numbers
+# --rsync-path       use this as a hack to ensure target directory exists, alternative would be another ssh process running mkdir -p, but slower
+if rsync --append-verify -h --rsync-path='mkdir -p '"$server_dir/$sha1"' && rsync' -az -e "ssh" --progress "$1" $server:$server_dir/$sha1/$name 1>&2;then
+	public_url=`echo -n $public_url/$sha1/; echo -n "$name" |
+    perl -p -e 's/([^A-Za-z0-9._-])/sprintf("%%%02X", ord($name))/seg'`
+    echo "$public_url" | xclip -selection c
+    echo "$public_url" | xclip
+    echo "$public_url"
+	exit 0
+else
+	exit 1
+fi
